@@ -45,7 +45,7 @@ var (
 )
 
 // Create a missile with the given options
-func newMissile(missileOptions *MissileOptions) (*Missile, error) {
+func newMissile(missileOptions *MissileOptions) *Missile {
 
     missile := &Missile{stopAttack: make(chan struct{}), launchers: defaultLaunchers}
 
@@ -67,7 +67,6 @@ func newMissile(missileOptions *MissileOptions) (*Missile, error) {
     }
 
     if missileOptions != nil {
-
         tr := missile.client.Transport.(*http.Transport)
 
         missile.launchers = missileOptions.launchers;
@@ -77,7 +76,6 @@ func newMissile(missileOptions *MissileOptions) (*Missile, error) {
         if missileOptions.tlsConfig != nil {
             tr.TLSClientConfig = missileOptions.tlsConfig
         }
-
         if !missileOptions.keepAlive {
             tr.DisableKeepAlives = true
             missile.dialer.KeepAlive = 0
@@ -88,7 +86,7 @@ func newMissile(missileOptions *MissileOptions) (*Missile, error) {
             tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
         }
     }
-    return missile, nil
+    return missile
 }
 
 
@@ -154,7 +152,7 @@ func (missile *Missile) hit(target *Target, tm time.Time) *Harm {
         return &hitResult
     }
 
-    r, err := missile.client.Do(req)
+    resp, err := missile.client.Do(req)
     if err != nil {
         // ignore redirect errors when the user set --redirects=NoFollow
         if missile.redirects == noFollow && strings.Contains(err.Error(), "stopped after") {
@@ -162,19 +160,20 @@ func (missile *Missile) hit(target *Target, tm time.Time) *Harm {
         }
         return &hitResult
     }
-    defer r.Body.Close()
-    in, err := io.Copy(ioutil.Discard, r.Body)
+    defer resp.Body.Close()
+    in, err := io.Copy(ioutil.Discard, resp.Body)
     if err != nil {
         return &hitResult
     }
+
     hitResult.bytesIn = uint64(in)
 
     if req.ContentLength != -1 {
         hitResult.bytesOut = uint64(req.ContentLength)
     }
 
-    if hitResult.code = r.StatusCode; hitResult.code < 200 || hitResult.code >= 400 {
-        hitResult.error = r.Status
+    if hitResult.code = resp.StatusCode; hitResult.code < 200 || hitResult.code >= 400 {
+        hitResult.error = resp.Status
     }
     return &hitResult
 }
