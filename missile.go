@@ -1,0 +1,193 @@
+package main
+
+import (
+    "net"
+    "net/http"
+    "time"
+    "sync"
+    "strings"
+    "io"
+    "io/ioutil"
+    "crypto/tls"
+    "golang.org/x/net/http2"
+)
+// Missile 是http.Client的一个包装
+type Missile struct {
+    dialer     *net.Dialer
+    client     http.Client
+    stopAttack chan struct{}
+    launchers  int
+    redirects  int
+}
+
+type MissileOptions struct {
+    timeout            time.Duration
+    launchers          int
+    maxIdleConnections int
+    keepAlive          bool
+    http2Enable        bool
+    maxRedirects       int
+    localAddr          *net.IPAddr
+    tlsConfig          *tls.Config
+}
+
+const (
+    defaultTimeout = 30 * time.Second
+    defaultConnections = 10000
+    defaultLaunchers = 10
+    noFollow = -1
+)
+
+var (
+    defaultLocalAddr = net.IPAddr{IP: net.IPv4zero}
+    defaultTLSConfig = &tls.Config{InsecureSkipVerify: true}
+)
+
+func newMissile(missileOptions *MissileOptions) (*Missile, error) {
+
+    missile := &Missile{stopAttack: make(chan struct{}), launchers: defaultLaunchers}
+
+    missile.dialer = &net.Dialer{
+        LocalAddr: &net.TCPAddr{IP: defaultLocalAddr.IP, Zone: defaultLocalAddr.Zone},
+        KeepAlive: 30 * time.Second,
+        Timeout:   defaultTimeout,
+    }
+
+    missile.client = http.Client{
+        Transport: &http.Transport{
+            Proxy: http.ProxyFromEnvironment,
+            Dial:  missile.dialer.Dial,
+            ResponseHeaderTimeout: defaultTimeout,
+            TLSClientConfig:       defaultTLSConfig,
+            TLSHandshakeTimeout:   10 * time.Second,
+            MaxIdleConnsPerHost:   defaultConnections,
+        },
+    }
+
+    if missileOptions != nil {
+
+        tr := missile.client.Transport.(*http.Transport)
+
+        missile.launchers = missileOptions.launchers;
+        missile.dialer.Timeout = missileOptions.timeout
+        tr.ResponseHeaderTimeout = missileOptions.timeout
+        tr.MaxIdleConnsPerHost = missileOptions.maxIdleConnections
+        if missileOptions.tlsConfig != nil {
+            tr.TLSClientConfig = missileOptions.tlsConfig
+        }
+
+        if !missileOptions.keepAlive {
+            tr.DisableKeepAlives = true
+            missile.dialer.KeepAlive = 0
+        }
+        if missileOptions.http2Enable {
+            http2.ConfigureTransport(tr)
+        } else {
+            tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+        }
+    }
+    return missile, nil
+}
+
+
+// 发射
+func (missile *Missile) launch(target *Target, attackPerSec int, du time.Duration) <-chan *Harm {
+    var launchers sync.WaitGroup
+    harms := make(chan *Harm)
+    ticks := make(chan time.Time)
+    for i := 0; i < missile.launchers; i++ {
+        launchers.Add(1)
+        go missile.fire(target, &launchers, ticks, harms)
+    }
+    go func() {
+        defer close(harms)
+        defer launchers.Wait()
+        defer close(ticks)
+        interval := 1e9 / attackPerSec
+        hits := attackPerSec * int(du.Seconds())
+        began, done := time.Now(), 0
+        for {
+            now, next := time.Now(), began.Add(time.Duration(done * interval))
+            time.Sleep(next.Sub(now))
+            select {
+            case ticks <- max(next, now):
+                if done++; done == hits {
+                    return
+                }
+            case <-missile.stopAttack:
+                return
+            default:
+            // all workers are blocked. start one more and try again
+                launchers.Add(1)
+                go missile.fire(target, &launchers, ticks, harms)
+            }
+        }
+    }()
+    return harms
+}
+
+func (missile *Missile) fire(target *Target, launchers *sync.WaitGroup, ticks <-chan time.Time, results chan <-*Harm) {
+    defer launchers.Done()
+    for tm := range ticks {
+        results <- missile.hit(target, tm)
+    }
+}
+
+func (missile *Missile) hit(target *Target, tm time.Time) *Harm {
+
+    hitResult := Harm{timestamp: tm}
+    var hitError error
+
+    defer func() {
+        hitResult.latency = time.Since(tm)
+        if hitError != nil {
+            hitResult.error = hitError.Error()
+        }
+    }()
+
+    req, err := target.request()
+    if err != nil {
+        return &hitResult
+    }
+
+    r, err := missile.client.Do(req)
+    if err != nil {
+        // ignore redirect errors when the user set --redirects=NoFollow
+        if missile.redirects == noFollow && strings.Contains(err.Error(), "stopped after") {
+            err = nil
+        }
+        return &hitResult
+    }
+    defer r.Body.Close()
+    in, err := io.Copy(ioutil.Discard, r.Body)
+    if err != nil {
+        return &hitResult
+    }
+    hitResult.bytesIn = uint64(in)
+
+    if req.ContentLength != -1 {
+        hitResult.bytesOut = uint64(req.ContentLength)
+    }
+
+    if hitResult.code = r.StatusCode; hitResult.code < 200 || hitResult.code >= 400 {
+        hitResult.error = r.Status
+    }
+    return &hitResult
+}
+
+// Stop stops the current attack.
+func (missile *Missile) stop() {
+    select {
+    case <-missile.stopAttack:
+        return
+    default:
+        close(missile.stopAttack)
+    }
+}
+
+func max(a, b time.Time) time.Time {
+    if a.After(b) {
+        return a
+    }
+    return b
+}
