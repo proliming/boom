@@ -13,8 +13,7 @@ type TargetOptions struct {
     cookie http.Cookie
 }
 
-// target 代表一个请求的目标
-// 多个missile可以向同一个target发起攻击(请求)
+// Target is a wrapper of http.Request
 type Target struct {
     method string
     url    string
@@ -23,19 +22,8 @@ type Target struct {
     cookie http.Cookie
 }
 
-
-func newTargetWithUrl(url string) (target *Target) {
-    target = &Target{
-        url:url,
-        method:"GET",
-        body:[]byte{},
-        header:make(map[string][]string),
-        cookie:http.Cookie{},
-    }
-    return target
-}
-
-func newTargetWithOptions(targetOpts *TargetOptions) (target *Target, err error) {
+// Create a Target with options.
+func newTargetWithOptions(targetOpts *TargetOptions) (target *Target) {
     target = &Target{
         url:targetOpts.url,
         method:targetOpts.method,
@@ -43,9 +31,8 @@ func newTargetWithOptions(targetOpts *TargetOptions) (target *Target, err error)
         header:targetOpts.header,
         cookie:targetOpts.cookie,
     }
-    return target, nil
+    return target
 }
-
 
 // 返回一个 *http.Request 的封装
 func (t *Target) request() (*http.Request, error) {
