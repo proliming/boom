@@ -24,8 +24,8 @@ func boom(boomOpts *BoomOptions) {
     missileOpts := parseMissileOptions(boomOpts)
 
     // now create target and missile
-    target, _ := newTargetWithOptions(targetOpts)
-    missile, _ := newMissile(missileOpts)
+    target := newTargetWithOptions(targetOpts)
+    missile := newMissile(missileOpts)
 
     // launch
     harmsResult := missile.launch(target, boomOpts.requestPerSec, boomOpts.requestDuration)
@@ -42,6 +42,7 @@ func boom(boomOpts *BoomOptions) {
 
 // Parse the TargetOptions
 func parseTargetOptions(boomOpts *BoomOptions) (targetOpts *TargetOptions) {
+    log.Println("Parsing target options...")
     targetOpts = &TargetOptions{}
     method := boomOpts.requestMethod
 
@@ -53,11 +54,13 @@ func parseTargetOptions(boomOpts *BoomOptions) (targetOpts *TargetOptions) {
     // TODO url check?
     if len(boomOpts.requestUrl) > 0 {
         targetOpts.url = boomOpts.requestUrl
+    } else {
+        log.Fatal("Url not set for boom.")
     }
 
+    httpHeader := http.Header{}
     if boomOpts.requestHeaders != "" {
         // header
-        httpHeader := http.Header{}
         headerTokens := strings.Split(boomOpts.requestHeaders, headerSplitChar)
         for _, sh := range headerTokens {
             headerValue := strings.Split(sh, ":")
@@ -69,10 +72,11 @@ func parseTargetOptions(boomOpts *BoomOptions) (targetOpts *TargetOptions) {
         targetOpts.header = httpHeader
     }
 
-    // for now cookie not supported
+    //TODO for now cookie not supported
+
+    // post data
     if boomOpts.requestPostData != "" {
         body := boomOpts.requestPostData
-
         if strings.HasPrefix(body, bodyReadFilePrefix) {
             bodyContentFile := strings.TrimPrefix(body, bodyReadFilePrefix)
             f, err := os.Open(bodyContentFile)
@@ -84,9 +88,17 @@ func parseTargetOptions(boomOpts *BoomOptions) (targetOpts *TargetOptions) {
             n, err := reader.Read(bodyBytes)
             if n > 0 && err == nil {
                 targetOpts.body = bodyBytes
+            } else {
+                log.Fatalf("Read file to post error :%s", bodyContentFile)
             }
         } else {
             targetOpts.body = []byte(strings.TrimSpace(body))
+        }
+        if boomOpts.requestPostDataContentType == "" {
+            log.Println("Post data setted but no Content-Type. Will using text/plain")
+            httpHeader.Add("Content-Type", "text/plain")
+        } else {
+            httpHeader.Add("Content-Type", strings.TrimSpace(boomOpts.requestPostDataContentType))
         }
     }
 
@@ -96,6 +108,7 @@ func parseTargetOptions(boomOpts *BoomOptions) (targetOpts *TargetOptions) {
 
 // Parse the MissileOptions
 func parseMissileOptions(boomOpts *BoomOptions) (missileOpts *MissileOptions) {
+    log.Println("Parsing missile options...")
     missileOpts = &MissileOptions{}
     if boomOpts.requestTimeout > 0 {
         missileOpts.timeout = boomOpts.requestTimeout
@@ -112,6 +125,8 @@ func parseMissileOptions(boomOpts *BoomOptions) (missileOpts *MissileOptions) {
 
     missileOpts.keepAlive = missileOpts.keepAlive
 
+    log.Printf("Missile launchers:%d, timeout:%t, keepAlive:%b", missileOpts.launchers, missileOpts.timeout,
+        missileOpts.keepAlive)
     // TODO support tlsConfig and http2Enable and maxRedirects
     return missileOpts
 
