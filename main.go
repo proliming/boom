@@ -5,66 +5,75 @@ import (
     "runtime"
     "os"
     "fmt"
-    "errors"
     "time"
+    "log"
 )
 
+// Version of boom
 const BoomVersion = "1.0"
 
 var (
-    // -cpu:要使用的cpu个数, 默认使用1个CPU
+    // -cpu: The cpu to use
     cpuToUse int
-    // -h: 显示使用帮助
+    // -help: Show help message then exit
     showHelpUsage bool
-    // -l: 开启log输出， 默认不显示log信息
+    // -l: Enable log output
     showLogs bool
-    // -V: boom 版本
+    // -V: Show version of boom then exit
     showVersion bool
 )
-var (
-    errZeroRate = errors.New("每秒请求次数必须大于0")
-    errBadCert = errors.New("认证失败")
-    errHeaders = errors.New("请求头格式不正确")
-)
 
+// Options of boom
 type BoomOptions struct {
-    // -A: Authentication,基础认证  auth-username:password
+    // -A: Supply BASIC Authentication credentials to the server.
+    // The username and password are separated by a single : .
     authentication             string
-    // -C: 在请求时发送Cookie   cookie-name=value
+
+    // -C: Add a Cookie: line to the request like: cookie-name=value
     requestCookies             string
-    // -c: Content-Type, post数据时的Content—Type
+
+    // -c: Content-type header to use for POST/PUT data,
+    // eg. application/x-www-form-urlencoded. Default is text/plain.
     requestPostDataContentType string
-    // -D: post 的数据，支持文件和 引号中的内容
+
+    // -D: File or just a string containing data to POST. Remember to also set -c.
     requestPostData            string
-    // -g: 开启的goroutines个数(线程数)，默认1个
+
+    // -g: Number of threads(goroutines) to perform for the test.
     requestGoroutines          int
-    // -H: 自定义附加的请求头  head-type:value
+
+    // -H: Append extra headers to the request like: head-type:value
     requestHeaders             string
-    // -k: 启用KeepAlive功能，允许在一个http会话中发送多个requests 默认关闭
+
+    // -k: Enable the HTTP KeepAlive feature
     enableKeepAlive            bool
 
-    // -la: local address, 建立连接时，使用的本地地址
+    // -la: local address
     localAddress               string
-    // -m: 自定义请求方法，默认GET
+
+    // -m: Custom HTTP method for the requests.
     requestMethod              string
-    // -t: 压测持续时间
+
+    // -t: Duration of this test.
     requestDuration            time.Duration
-    // -u： 请求的url
+
+    // -u： The url to request
     requestUrl                 string
-    // -o: 结果输出到指定位置
+    // -o: Output the reports in specified location
     resultOutput               string
-    // -R: 生成结果报告text, json, plot
+
+    // -R: Generate reports in [text, json, plot]
     generateReports            string
-    // -r: 每秒请求次数
+    // -r: Number of requests to perform at one sec.
     requestPerSec              int
-    // -P: Protocol,请求使用的协议
+    // -P: Specify SSL/TLS protocol .
     requestProtocol            string
-    // -s: timeout, 一次请求超时时间设置 单位为s
+    // -s: Maximum number of seconds to wait before a request times out.
     requestTimeout             time.Duration
 }
 
 
-// 进一步处理命令行参数，例如请求头，认证等参数
+// Parse command line args
 func parseArgs() (*BoomOptions, error) {
     boomOpts := &BoomOptions{
         requestGoroutines:1000,
@@ -72,33 +81,33 @@ func parseArgs() (*BoomOptions, error) {
         enableKeepAlive:false,
         requestTimeout:30,
     }
-    flag.StringVar(&boomOpts.authentication, "A", "", "Authentication,基础认证  auth-username:password")
-    flag.StringVar(&boomOpts.requestCookies, "C", "", "在请求时发送Cookie, cookie-name=value;cookie-name2=value2")
-    flag.IntVar(&cpuToUse, "cpu", 1, "使用的CPU个数")
-    flag.StringVar(&boomOpts.requestPostDataContentType, "c", "", "Content-Type, post数据时的Content—Type")
-    flag.StringVar(&boomOpts.requestPostData, "D", "", "Post 的数据，支持文件和 引号中的内容, 如果是文件要以@开头，" +
-        "例如 '@/home/work/aa.json'")
-    flag.IntVar(&boomOpts.requestGoroutines, "g", 1000, "开启的goroutines个数(线程数)，默认1个")
-    flag.StringVar(&boomOpts.requestHeaders, "H", "", "自定义附加的请求头  head-type:value")
-    flag.BoolVar(&boomOpts.enableKeepAlive, "k", false, "启用KeepAlive功能，允许在一个http会话中发送多个requests 默认关闭")
-    flag.BoolVar(&showLogs, "l", false, "开启log输出,默认不显示log信息")
-    flag.StringVar(&boomOpts.localAddress, "la", "", "建立连接时，使用的本地地址")
-    flag.StringVar(&boomOpts.requestMethod, "m", "GET", "自定义请求方法，默认GET")
-    flag.DurationVar(&boomOpts.requestDuration, "t", time.Second, "压测持续时间")
-    flag.StringVar(&boomOpts.requestUrl, "u", "", "请求的url")
-    flag.StringVar(&boomOpts.resultOutput, "o", "", "结果输出到指定位置")
-    flag.StringVar(&boomOpts.requestProtocol, "P", "HTTP", "Protocol,请求使用的协议")
-    flag.DurationVar(&boomOpts.requestTimeout, "s", 30 * time.Second, "一次请求超时时间设置,单位为s")
-    flag.IntVar(&boomOpts.requestPerSec, "r", 50, "每秒请求的次数")
-    flag.StringVar(&boomOpts.generateReports, "R", "", "生成结果报告[text, json, plot]")
-    flag.BoolVar(&showVersion, "V", false, "显示当前Boom版本")
+    flag.StringVar(&boomOpts.authentication, "A", "", "Supply BASIC Authentication credentials to the server. " +
+        "The username and password are separated by a single : .")
+    flag.StringVar(&boomOpts.requestCookies, "C", "", "Add a Cookie: line to the request like: cookie-name=value")
+    flag.IntVar(&cpuToUse, "cpu", 1, "The cpu to use when sending requests")
+    flag.StringVar(&boomOpts.requestPostDataContentType, "c", "", "Content-type header to use for POST/PUT data, " +
+        "eg. application/x-www-form-urlencoded. Default is text/plain.")
+    flag.StringVar(&boomOpts.requestPostData, "D", "", "File or just a string containing data to POST. Remember to also set -c.")
+    flag.IntVar(&boomOpts.requestGoroutines, "g", 100, " Number of threads(goroutines) to perform for the test.")
+    flag.StringVar(&boomOpts.requestHeaders, "H", "", "Append extra headers to the request like: head-type:value")
+    flag.BoolVar(&boomOpts.enableKeepAlive, "k", false, "Enable the HTTP KeepAlive feature")
+    flag.BoolVar(&showLogs, "l", false, "Enable log output")
+    flag.StringVar(&boomOpts.localAddress, "la", "", "Local address")
+    flag.StringVar(&boomOpts.requestMethod, "m", "GET", "Custom HTTP method for the requests.")
+    flag.DurationVar(&boomOpts.requestDuration, "t", time.Second, "Duration of this test.")
+    flag.StringVar(&boomOpts.requestUrl, "u", "", "The url to request")
+    flag.StringVar(&boomOpts.resultOutput, "o", "", "Output the reports in specified location")
+    flag.StringVar(&boomOpts.requestProtocol, "P", "HTTP", "Specify SSL/TLS protocol .")
+    flag.DurationVar(&boomOpts.requestTimeout, "s", 30 * time.Second, "Maximum number of seconds to wait before a request times out.")
+    flag.IntVar(&boomOpts.requestPerSec, "r", 50, "Number of requests to perform at one sec.")
+    flag.StringVar(&boomOpts.generateReports, "R", "", "Generate reports in [text, json, plot]")
+    flag.BoolVar(&showVersion, "V", false, " Show version of boom then exit")
     flag.Parse()
-    //TODO 进一步处理
     return boomOpts, nil
 }
 
 
-// 显示帮助信息
+// Show usage information
 func usage() {
     usage := `aaaa`
     fmt.Print(usage)
@@ -109,7 +118,7 @@ func usage() {
 func main() {
     boomOpts, err := parseArgs()
     if err != nil {
-        panic("参数错误:" + err.Error())
+        log.Fatal("Error accured when parsing command line args:" + err.Error())
         os.Exit(1)
     }
     if showVersion {
@@ -122,5 +131,7 @@ func main() {
     }
     // set GOMAXPROCS
     runtime.GOMAXPROCS(cpuToUse)
+
+    // start boom
     boom(boomOpts)
 }

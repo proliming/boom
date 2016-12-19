@@ -11,7 +11,7 @@ import (
     "crypto/tls"
     "golang.org/x/net/http2"
 )
-// Missile 是http.Client的一个包装
+// Missile is a wrapper of http.Client and some properties
 type Missile struct {
     dialer     *net.Dialer
     client     http.Client
@@ -20,6 +20,7 @@ type Missile struct {
     redirects  int
 }
 
+// Options of a Missile
 type MissileOptions struct {
     timeout            time.Duration
     launchers          int
@@ -43,6 +44,7 @@ var (
     defaultTLSConfig = &tls.Config{InsecureSkipVerify: true}
 )
 
+// Create a missile with the given options
 func newMissile(missileOptions *MissileOptions) (*Missile, error) {
 
     missile := &Missile{stopAttack: make(chan struct{}), launchers: defaultLaunchers}
@@ -90,7 +92,7 @@ func newMissile(missileOptions *MissileOptions) (*Missile, error) {
 }
 
 
-// 发射
+// Launch the Missile
 func (missile *Missile) launch(target *Target, attackPerSec int, du time.Duration) <-chan *Harm {
     var launchers sync.WaitGroup
     harms := make(chan *Harm)
@@ -126,6 +128,7 @@ func (missile *Missile) launch(target *Target, attackPerSec int, du time.Duratio
     return harms
 }
 
+// Fire
 func (missile *Missile) fire(target *Target, launchers *sync.WaitGroup, ticks <-chan time.Time, results chan <-*Harm) {
     defer launchers.Done()
     for tm := range ticks {
@@ -133,6 +136,7 @@ func (missile *Missile) fire(target *Target, launchers *sync.WaitGroup, ticks <-
     }
 }
 
+// Hit the Target
 func (missile *Missile) hit(target *Target, tm time.Time) *Harm {
 
     hitResult := Harm{timestamp: tm}

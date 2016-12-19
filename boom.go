@@ -9,29 +9,38 @@ import (
     "os"
 )
 
+// Use to check http methods
 var httpMethodChecker = regexp.MustCompile("^(HEAD|GET|PUT|POST|PATCH|OPTIONS|DELETE) ")
 
 const headerSplitChar = ";"
 const cookieSplitChar = headerSplitChar
 const bodyReadFilePrefix = "@@"
 
+// This method will create Target and Missile
+// then launch the Missile
 func boom(boomOpts *BoomOptions) {
 
     targetOpts := parseTargetOptions(boomOpts)
-
-    target, _ := newTargetWithOptions(targetOpts)
-
     missileOpts := parseMissileOptions(boomOpts)
 
+    // now create target and missile
+    target, _ := newTargetWithOptions(targetOpts)
     missile, _ := newMissile(missileOpts)
 
-    harmsChan := missile.launch(target, boomOpts.requestPerSec, boomOpts.requestDuration)
+    // launch
+    harmsResult := missile.launch(target, boomOpts.requestPerSec, boomOpts.requestDuration)
 
-    for hc := range harmsChan {
-        log.Printf("Code: %d, Timestamp:%s, Latency:%s", hc.code, hc.timestamp, hc.latency)
+    // collects the report
+    reports, _ := generateReport(harmsResult)
+
+    if boomOpts.resultOutput != "Stdout" {
+        reports.writeToFile(boomOpts.resultOutput)
+    } else {
+        reports.prettyPrintToConsole()
     }
 }
 
+// Parse the TargetOptions
 func parseTargetOptions(boomOpts *BoomOptions) (targetOpts *TargetOptions) {
     targetOpts = &TargetOptions{}
     method := boomOpts.requestMethod
@@ -85,6 +94,7 @@ func parseTargetOptions(boomOpts *BoomOptions) (targetOpts *TargetOptions) {
 
 }
 
+// Parse the MissileOptions
 func parseMissileOptions(boomOpts *BoomOptions) (missileOpts *MissileOptions) {
     missileOpts = &MissileOptions{}
     if boomOpts.requestTimeout > 0 {
@@ -100,15 +110,6 @@ func parseMissileOptions(boomOpts *BoomOptions) (missileOpts *MissileOptions) {
     // TODO support custom setting
     missileOpts.maxIdleConnections = defaultConnections
 
-    /*if boomOpts.localAddress != "" {
-        addr, err := net.ResolveIPAddr("ip", boomOpts.localAddress)
-        if err != nil {
-            log.Fatalf("Parse localAddress: %s error %s", boomOpts.localAddress, err.Error())
-        }
-        missileOpts.localAddr = addr
-    } else {
-        missileOpts.localAddr = net.IPAddr{IP: net.IPv4zero}
-    }*/
     missileOpts.keepAlive = missileOpts.keepAlive
 
     // TODO support tlsConfig and http2Enable and maxRedirects
@@ -116,7 +117,7 @@ func parseMissileOptions(boomOpts *BoomOptions) (missileOpts *MissileOptions) {
 
 }
 
-func checkHttpMethod(t string) bool {
-
-    return httpMethodChecker.MatchString(t)
+// check
+func checkHttpMethod(m string) bool {
+    return httpMethodChecker.MatchString(m)
 }

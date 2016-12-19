@@ -2,7 +2,7 @@ package main
 
 import "time"
 
-// 代表一次请求的结果
+// Standards for the result by launching a Missile
 type Harm struct {
     code      int        `json:"code"`
     timestamp time.Time     `json:"timestamp"`
