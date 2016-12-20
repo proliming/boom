@@ -99,7 +99,6 @@ func (missile *Missile) launch(target *Target, totalHits int, attackPerSec int, 
         launchers.Add(1)
         go missile.fire(target, &launchers, ticks, harms)
     }
-    // Start an
     go func() {
         defer close(harms)
         defer launchers.Wait()
@@ -155,48 +154,48 @@ func (missile *Missile) fire(target *Target, launchers *sync.WaitGroup, ticks <-
 }
 
 // Hit the Target
-func (missile *Missile) hit(target *Target, hitStartTime time.Time) *Harm {
+func (missile *Missile) hit(target *Target, tkTime time.Time) *Harm {
 
-    hitResult := Harm{timestamp: hitStartTime}
-    var hitError error
-
-    defer func() {
-        hitResult.latency = time.Since(hitStartTime)
-        if hitError != nil {
-            hitResult.error = hitError.Error()
-        }
-    }()
-
+    harm := &Harm{timestamp: tkTime}
     req, err := target.request()
     if err != nil {
-        return &hitResult
+        return &harm
     }
 
+    harm.startTime = time.Now()
+    // Do http request
     resp, err := missile.client.Do(req)
+
+    // Calculate the latency
+    harm.endTime = time.Now()
+    harm.latency = harm.endTime.Sub(harm.startTime)
+
     if err != nil {
-        return &hitResult
+        return harm
     }
     defer resp.Body.Close()
 
+    // Just discard the response body
     in, err := io.Copy(ioutil.Discard, resp.Body)
     if err != nil {
-        return &hitResult
+        return harm
     }
+    // Calculate the bytes received
+    harm.receivedBytes = uint64(in)
 
-    hitResult.bytesIn = uint64(in)
-
+    // Calculate the bytes sent
     if req.ContentLength != -1 {
-        hitResult.bytesOut = uint64(req.ContentLength)
+        harm.sentBytes = uint64(req.ContentLength)
     }
-
-    if hitResult.code = resp.StatusCode; hitResult.code < 200 || hitResult.code >= 400 {
-        hitResult.error = resp.Status
+    // Calculate the err info
+    if harm.statusCode = resp.StatusCode; harm.statusCode < 200 || harm.statusCode >= 400 {
+        harm.error = resp.Status
     }
-    return &hitResult
+    return harm
 }
 
 // Stop stops the current attack.
-func (missile *Missile) stop(boomOpts * BoomOptions) {
+func (missile *Missile) stop(boomOpts *BoomOptions) {
     log.Println("Missle will stop.")
     select {
     case <-missile.stopAttack:
@@ -207,6 +206,7 @@ func (missile *Missile) stop(boomOpts * BoomOptions) {
 
 }
 
+// Judge which time is later
 func max(a, b time.Time) time.Time {
     if a.After(b) {
         return a
