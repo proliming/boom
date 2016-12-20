@@ -24,7 +24,7 @@ func boom(boomOpts *BoomOptions) {
     missileOpts := parseMissileOptions(boomOpts)
 
     // now create target and missile
-    target := newTargetWithOptions(targetOpts)
+    target := newTarget(targetOpts)
     missile := newMissile(missileOpts)
 
     // launch
