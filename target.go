@@ -23,7 +23,7 @@ type Target struct {
 }
 
 // Create a Target with options.
-func newTargetWithOptions(targetOpts *TargetOptions) (target *Target) {
+func newTarget(targetOpts *TargetOptions) (target *Target) {
     target = &Target{
         url:targetOpts.url,
         method:targetOpts.method,
