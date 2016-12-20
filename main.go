@@ -16,8 +16,6 @@ const BoomVersion = "boom version 1.0"
 var (
     // -cpu: The cpu to use
     cpuToUse int
-    // -h: Show help message then exit
-    showHelpUsage bool
     // -l: Enable log output
     showLogs bool
     // -V: Show version of boom then exit
@@ -49,13 +47,16 @@ type BoomOptions struct {
     // -k: Enable the HTTP KeepAlive feature
     enableKeepAlive            bool
 
-    // -la: local address
+    // -la: Local address
     localAddress               string
 
     // -m: Custom HTTP method for the requests.
     requestMethod              string
 
-    // -t: Duration of this test.
+    // -n: Number of requests to perform for the test. If this flag > 0, the -t and -r will be ignore.
+    totalRequests              int
+
+    // -t: Duration of this test, Remember to set -r.
     requestDuration            time.Duration
 
     // -u： The url to request
@@ -98,9 +99,10 @@ func parseArgs() *BoomOptions {
     flag.BoolVar(&showLogs, "l", false, "Enable log output")
     flag.StringVar(&boomOpts.localAddress, "la", "", "Local address  to bind to when making outgoing connections.")
     flag.StringVar(&boomOpts.requestMethod, "m", "GET", "Custom HTTP method for the requests.")
+    flag.IntVar(&boomOpts.totalRequests, "n", 0, "Number of requests to perform for the test. If this flag > 0, the -t and -r will be ignore.")
     flag.DurationVar(&boomOpts.requestDuration, "t", time.Second, "Duration of this test.")
     flag.StringVar(&boomOpts.requestUrl, "u", "", "The url to request")
-    flag.StringVar(&boomOpts.resultOutput, "o", "", "Output the reports in specified location")
+    flag.StringVar(&boomOpts.resultOutput, "o", "Stdout", "Output the reports in specified location")
     flag.StringVar(&boomOpts.requestProtocol, "P", "HTTP", "Specify SSL/TLS protocol .")
     flag.DurationVar(&boomOpts.requestTimeout, "s", 30 * time.Second, "Maximum number of seconds to wait before a request times out.")
     flag.IntVar(&boomOpts.requestPerSec, "r", 50, "Number of requests to perform at one sec.")

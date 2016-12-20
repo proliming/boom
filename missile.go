@@ -5,11 +5,11 @@ import (
     "net/http"
     "time"
     "sync"
-    "strings"
     "io"
     "io/ioutil"
     "crypto/tls"
     "golang.org/x/net/http2"
+    "log"
 )
 // Missile is a wrapper of http.Client and some properties
 type Missile struct {
@@ -35,7 +35,7 @@ type MissileOptions struct {
 const (
     defaultTimeout = 30 * time.Second
     defaultConnections = 10000
-    defaultLaunchers = 10
+    defaultLaunchers = 100
     noFollow = -1
 )
 
@@ -91,7 +91,7 @@ func newMissile(missileOptions *MissileOptions) *Missile {
 
 
 // Launch the Missile
-func (missile *Missile) launch(target *Target, attackPerSec int, du time.Duration) <-chan *Harm {
+func (missile *Missile) launch(target *Target, totalHits int, attackPerSec int, du time.Duration) <-chan *Harm {
     var launchers sync.WaitGroup
     harms := make(chan *Harm)
     ticks := make(chan time.Time)
@@ -99,27 +99,47 @@ func (missile *Missile) launch(target *Target, attackPerSec int, du time.Duratio
         launchers.Add(1)
         go missile.fire(target, &launchers, ticks, harms)
     }
+    // Start an
     go func() {
         defer close(harms)
         defer launchers.Wait()
         defer close(ticks)
-        interval := 1e9 / attackPerSec
-        hits := attackPerSec * int(du.Seconds())
-        began, done := time.Now(), 0
-        for {
-            now, next := time.Now(), began.Add(time.Duration(done * interval))
-            time.Sleep(next.Sub(now))
-            select {
-            case ticks <- max(next, now):
-                if done++; done == hits {
+        if totalHits > 0 {
+            done := 0
+            for {
+                //time.Sleep(1 * time.Second)
+                select {
+                case ticks <- time.Now():
+                    if done++; done == totalHits {
+                        return
+                    }
+                case <-missile.stopAttack:
                     return
+                default:
+                // all workers are blocked. start one more and try again
+                    launchers.Add(1)
+                    go missile.fire(target, &launchers, ticks, harms)
                 }
-            case <-missile.stopAttack:
-                return
-            default:
-            // all workers are blocked. start one more and try again
-                launchers.Add(1)
-                go missile.fire(target, &launchers, ticks, harms)
+            }
+        } else {
+            interval := 1e9 / attackPerSec
+            hits := attackPerSec * int(du.Seconds())
+            began, done := time.Now(), 0
+            for {
+                now, next := time.Now(), began.Add(time.Duration(done * interval))
+                time.Sleep(next.Sub(now))
+                select {
+                case ticks <- max(next, now):
+                    if done++; done == hits {
+                        return
+                    }
+                case <-missile.stopAttack:
+                    return
+                default:
+                // all workers are blocked. start one more and try again
+                    launchers.Add(1)
+                    go missile.fire(target, &launchers, ticks, harms)
+                }
             }
         }
     }()
@@ -129,19 +149,19 @@ func (missile *Missile) launch(target *Target, attackPerSec int, du time.Duratio
 // Fire
 func (missile *Missile) fire(target *Target, launchers *sync.WaitGroup, ticks <-chan time.Time, results chan <-*Harm) {
     defer launchers.Done()
-    for tm := range ticks {
-        results <- missile.hit(target, tm)
+    for tk := range ticks {
+        results <- missile.hit(target, tk)
     }
 }
 
 // Hit the Target
-func (missile *Missile) hit(target *Target, tm time.Time) *Harm {
+func (missile *Missile) hit(target *Target, hitStartTime time.Time) *Harm {
 
-    hitResult := Harm{timestamp: tm}
+    hitResult := Harm{timestamp: hitStartTime}
     var hitError error
 
     defer func() {
-        hitResult.latency = time.Since(tm)
+        hitResult.latency = time.Since(hitStartTime)
         if hitError != nil {
             hitResult.error = hitError.Error()
         }
@@ -154,13 +174,10 @@ func (missile *Missile) hit(target *Target, tm time.Time) *Harm {
 
     resp, err := missile.client.Do(req)
     if err != nil {
-        // ignore redirect errors when the user set --redirects=NoFollow
-        if missile.redirects == noFollow && strings.Contains(err.Error(), "stopped after") {
-            err = nil
-        }
         return &hitResult
     }
     defer resp.Body.Close()
+
     in, err := io.Copy(ioutil.Discard, resp.Body)
     if err != nil {
         return &hitResult
@@ -179,13 +196,15 @@ func (missile *Missile) hit(target *Target, tm time.Time) *Harm {
 }
 
 // Stop stops the current attack.
-func (missile *Missile) stop() {
+func (missile *Missile) stop(boomOpts * BoomOptions) {
+    log.Println("Missle will stop.")
     select {
     case <-missile.stopAttack:
         return
     default:
         close(missile.stopAttack)
     }
+
 }
 
 func max(a, b time.Time) time.Time {

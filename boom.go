@@ -28,11 +28,13 @@ func boom(boomOpts *BoomOptions) {
     missile := newMissile(missileOpts)
 
     // launch
-    harmsResult := missile.launch(target, boomOpts.requestPerSec, boomOpts.requestDuration)
+    harmsResult := missile.launch(target, boomOpts.totalRequests, boomOpts.requestPerSec, boomOpts.requestDuration)
 
+    log.Println("The missile launched!")
     // collects the report
-    reports, _ := generateReport(harmsResult)
+    reports := generateReport(harmsResult, boomOpts)
 
+    log.Println("Generating reports...")
     if boomOpts.resultOutput != "Stdout" {
         reports.writeToFile(boomOpts.resultOutput)
     } else {
