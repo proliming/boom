@@ -58,8 +58,8 @@ func generateReport(harmChan <-chan *Harm, boomOpts *BoomOptions) (report *Repor
         if harm.error != "" {
             failedRequests++
         }
-        totalSendBytes += harm.bytesOut
-        totalReceivedBytes += harm.bytesIn
+        totalSendBytes += harm.sentBytes
+        totalReceivedBytes += harm.receivedBytes
         totalLatency += harm.latency.Seconds()
         timestamps = append(timestamps, harm.timestamp)
         latencies = append(latencies, harm.latency)
