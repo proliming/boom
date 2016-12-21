@@ -5,6 +5,7 @@ Boom is a HTTP load/stress testing tool.
 ![](boom-logo.png)
 
 ## Usage manual
+```console
 Usage of ./boom:
   -A string
         Supply BASIC Authentication credentials to the server. The username and password are separated by a single : .
@@ -43,3 +44,4 @@ Usage of ./boom:
         Duration of this test. (default 1s)
   -u string
         The url to request
+```
