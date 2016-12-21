@@ -148,7 +148,7 @@ func (r *Report) prettyPrintToConsole() {
 
     fmt.Printf("Requests per second: %.3f (mean)\n", r.RequestPerSecond)
     fmt.Printf("Time per request: %.3fms (mean)\n", r.TimePerRequest * 1000)
-    fmt.Printf("Time per request concurrency: %.3fms (mean)\n", r.TimePerRequest * 1000)
+    fmt.Printf("Time per request concurrency: %.3fms (mean)\n", r.TimePerRequestConcurrency * 1000)
     fmt.Printf("Latency(min,mean,max): %.3fms, %.3fms ,%.3fms \n", r.MinLatency * 1000, r.MeanLatency * 1000, r.MaxLatency * 1000)
 
 }
