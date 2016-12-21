@@ -179,6 +179,7 @@ func (missile *Missile) hit(target *Target, fireCmdTime time.Time) *Damage {
     damage.latency = damage.endTime.Sub(damage.startTime)
 
     if err != nil {
+        damage.error = err.Error()
         return damage
     }
     defer resp.Body.Close()
@@ -186,6 +187,7 @@ func (missile *Missile) hit(target *Target, fireCmdTime time.Time) *Damage {
     // Just discard the response body
     in, err := io.Copy(ioutil.Discard, resp.Body)
     if err != nil {
+        damage.error = err.Error()
         return damage
     }
     // Calculate the bytes received
