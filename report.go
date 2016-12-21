@@ -31,7 +31,7 @@ type Report struct {
 type ReportTimeSlice [] time.Time
 type ReportLatencySlice []time.Duration
 
-func generateReport(harmChan <-chan *Harm, boomOpts *BoomOptions) (report *Report) {
+func generateReport(damageCh <-chan *Damage, boomOpts *BoomOptions) (report *Report) {
     var (
         harmCount = 0
         failedRequests = 0
@@ -48,21 +48,21 @@ func generateReport(harmChan <-chan *Harm, boomOpts *BoomOptions) (report *Repor
     //var firstResultComeTime time.Time
     var lastResultComeTime time.Time
 
-    for harm := range harmChan {
+    for damage := range damageCh {
         lastResultComeTime = time.Now()
         harmCount++
         completedRequests++
         if harmCount % 100 == 0 {
             fmt.Printf("Completed %d requests.\n", harmCount)
         }
-        if harm.error != "" {
+        if damage.error != "" {
             failedRequests++
         }
-        totalSendBytes += harm.sentBytes
-        totalReceivedBytes += harm.receivedBytes
-        totalLatency += harm.latency.Seconds()
-        timestamps = append(timestamps, harm.timestamp)
-        latencies = append(latencies, harm.latency)
+        totalSendBytes += damage.sentBytes
+        totalReceivedBytes += damage.receivedBytes
+        totalLatency += damage.latency.Seconds()
+        timestamps = append(timestamps, damage.timestamp)
+        latencies = append(latencies, damage.latency)
 
     }
 

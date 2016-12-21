@@ -154,19 +154,19 @@ func (missile *Missile) fire(target *Target,
 warheadsWaitGroup *sync.WaitGroup, fireCmdCh <-chan time.Time, results chan <-*Damage) {
 
     defer warheadsWaitGroup.Done()
-    for tk := range fireCmdCh {
-        results <- missile.hit(target, tk)
+    for fc := range fireCmdCh {
+        results <- missile.hit(target, fc)
     }
 
 }
 
 // Hit the Target
-func (missile *Missile) hit(target *Target, tkTime time.Time) *Damage {
+func (missile *Missile) hit(target *Target, fireCmdTime time.Time) *Damage {
 
-    damage := &Damage{timestamp: tkTime}
+    damage := &Damage{timestamp: fireCmdTime}
     req, err := target.request()
     if err != nil {
-        return &damage
+        return damage
     }
 
     damage.startTime = time.Now()

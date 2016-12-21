@@ -118,16 +118,16 @@ func parseMissileOptions(boomOpts *BoomOptions) (missileOpts *MissileOptions) {
         missileOpts.timeout = defaultTimeout
     }
     if boomOpts.requestGoroutines > 0 {
-        missileOpts.launchers = boomOpts.requestGoroutines
+        missileOpts.warheads = boomOpts.requestGoroutines
     } else {
-        missileOpts.launchers = defaultLaunchers
+        missileOpts.warheads = defaultWarheads
     }
     // TODO support custom setting
     missileOpts.maxIdleConnections = defaultConnections
 
     missileOpts.keepAlive = missileOpts.keepAlive
 
-    log.Printf("Missile launchers:%d, timeout:%t, keepAlive:%b", missileOpts.launchers, missileOpts.timeout,
+    log.Printf("Missile launchers:%d, timeout:%t, keepAlive:%b", missileOpts.warheads, missileOpts.timeout,
         missileOpts.keepAlive)
     // TODO support tlsConfig and http2Enable and maxRedirects
     return missileOpts
