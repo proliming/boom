@@ -127,12 +127,12 @@ func usage() {
 func welcome() {
 
     welcome := `
-    This is Boom, Version 1.2
-    Copyright (c) 2016- Li Ming, http://proliming.github.io/
-    Licensed to The Apache Software Foundation, http://www.apache.org/
+This is Boom, Version 1.2
+Copyright (c) 2016- Li Ming, http://proliming.github.io/
+Licensed to The Apache Software Foundation, http://www.apache.org/
 
-    This test will take some time. Please wait for a while :-)
-    `
+This test will take some time. Please wait for a while :-)
+`
     fmt.Println(welcome)
 
 }
