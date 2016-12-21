@@ -110,6 +110,7 @@ func (missile *Missile) launch(target *Target, totalHits int, hitPerSecond int, 
             done := 0
             for {
                 //time.Sleep(1 * time.Second)
+                //time.Sleep(1 * time.Nanosecond)
                 select {
                 case fireCmdCh <- time.Now():
                     if done++; done == totalHits {
@@ -195,14 +196,14 @@ func (missile *Missile) hit(target *Target, fireCmdTime time.Time) *Damage {
         damage.sentBytes = uint64(req.ContentLength)
     }
     // Calculate the err info
-    if damage.statusCode = resp.StatusCode; damage.statusCode < 200 || damage.statusCode >= 400 {
+    if damage.statusCode = resp.StatusCode; damage.statusCode != 200 {
         damage.error = resp.Status
     }
     return damage
 }
 
 // Stop stops the current attack.
-func (missile *Missile) stop(boomOpts *BoomOptions) {
+func (missile *Missile) stop() {
     log.Println("Missle will stop.")
     select {
     case <-missile.stopAttack:

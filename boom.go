@@ -7,6 +7,7 @@ import (
     "net/http"
     "bufio"
     "os"
+    "os/signal"
 )
 
 // Use to check http methods
@@ -28,17 +29,30 @@ func boom(boomOpts *BoomOptions) {
     missile := newMissile(missileOpts)
 
     // launch
-    harmsResult := missile.launch(target, boomOpts.totalRequests, boomOpts.requestPerSec, boomOpts.requestDuration)
+    damagesResult := missile.launch(target, boomOpts.totalRequests, boomOpts.requestPerSec, boomOpts.requestDuration)
 
     log.Println("The missile launched!")
-    // collects the report
-    reports := generateReport(harmsResult, boomOpts)
 
-    log.Println("Generating reports...")
-    if boomOpts.resultOutput != "Stdout" {
-        reports.writeToFile(boomOpts.resultOutput)
-    } else {
-        reports.prettyPrintToConsole()
+    //receiveDamages(damagesResult)
+
+    killFlag := make(chan os.Signal, 1)
+    signal.Notify(killFlag, os.Interrupt)
+
+    for {
+        select {
+        case <-killFlag:
+            missile.stop()
+        log.Println("Press CTRL+C")
+            createReport(boomOpts)
+            return
+        case r, ok := <-damagesResult:
+            if !ok {
+                createReport(boomOpts)
+                return
+            } else {
+                collectDamage(r)
+            }
+        }
     }
 }
 

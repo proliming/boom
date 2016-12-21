@@ -11,7 +11,10 @@ import (
 )
 
 // Version of boom
-const BoomVersion = "boom version 1.0"
+const BoomVersion = "Boom version 1.2"
+
+// Use to calculate the total time cost when running this test.
+var boomStartTime time.Time;
 
 var (
     // -cpu: The cpu to use
@@ -121,6 +124,19 @@ func usage() {
     os.Exit(0)
 }
 
+func welcome() {
+
+    welcome := `
+    This is Boom, Version 1.2
+    Copyright (c) 2016- Li Ming, http://proliming.github.io/
+    Licensed to The Apache Software Foundation, http://www.apache.org/
+
+    This test will take some time. Please wait for a while :-)
+    `
+    fmt.Println(welcome)
+
+}
+
 // Main entrance
 func main() {
     boomOpts := parseArgs()
@@ -144,5 +160,7 @@ func main() {
 
     log.Printf("Starting boom ...")
     // start boom
+    boomStartTime = time.Now()
+    welcome()
     boom(boomOpts)
 }
