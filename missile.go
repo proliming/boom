@@ -12,18 +12,19 @@ import (
     "log"
 )
 // Missile is a wrapper of http.Client and some properties
+// A missile can carry many warheads means multi goroutines
 type Missile struct {
     dialer     *net.Dialer
     client     http.Client
     stopAttack chan struct{}
-    launchers  int
+    warheads   int
     redirects  int
 }
 
 // Options of a Missile
 type MissileOptions struct {
     timeout            time.Duration
-    launchers          int
+    warheads           int // How many warhead can this missile carry
     maxIdleConnections int
     keepAlive          bool
     http2Enable        bool
@@ -35,7 +36,7 @@ type MissileOptions struct {
 const (
     defaultTimeout = 30 * time.Second
     defaultConnections = 10000
-    defaultLaunchers = 100
+    defaultWarheads = 100
     noFollow = -1
 )
 
@@ -47,7 +48,7 @@ var (
 // Create a missile with the given options
 func newMissile(missileOptions *MissileOptions) *Missile {
 
-    missile := &Missile{stopAttack: make(chan struct{}), launchers: defaultLaunchers}
+    missile := &Missile{stopAttack: make(chan struct{}), warheads: defaultWarheads}
 
     missile.dialer = &net.Dialer{
         LocalAddr: &net.TCPAddr{IP: defaultLocalAddr.IP, Zone: defaultLocalAddr.Zone},
@@ -69,7 +70,7 @@ func newMissile(missileOptions *MissileOptions) *Missile {
     if missileOptions != nil {
         tr := missile.client.Transport.(*http.Transport)
 
-        missile.launchers = missileOptions.launchers;
+        missile.warheads = missileOptions.warheads;
         missile.dialer.Timeout = missileOptions.timeout
         tr.ResponseHeaderTimeout = missileOptions.timeout
         tr.MaxIdleConnsPerHost = missileOptions.maxIdleConnections
@@ -91,107 +92,113 @@ func newMissile(missileOptions *MissileOptions) *Missile {
 
 
 // Launch the Missile
-func (missile *Missile) launch(target *Target, totalHits int, attackPerSec int, du time.Duration) <-chan *Harm {
-    var launchers sync.WaitGroup
-    harms := make(chan *Harm)
-    ticks := make(chan time.Time)
-    for i := 0; i < missile.launchers; i++ {
-        launchers.Add(1)
-        go missile.fire(target, &launchers, ticks, harms)
+func (missile *Missile) launch(target *Target, totalHits int, hitPerSecond int, du time.Duration) <-chan *Damage {
+    var warheadsWaitGroup sync.WaitGroup
+    damagesCh := make(chan *Damage)
+    fireCmdCh := make(chan time.Time)
+
+    // Each warhead standard for a single goroutine
+    for i := 0; i < missile.warheads; i++ {
+        warheadsWaitGroup.Add(1)
+        go missile.fire(target, &warheadsWaitGroup, fireCmdCh, damagesCh)
     }
     go func() {
-        defer close(harms)
-        defer launchers.Wait()
-        defer close(ticks)
+        defer close(damagesCh)
+        defer warheadsWaitGroup.Wait()
+        defer close(fireCmdCh)
         if totalHits > 0 {
             done := 0
             for {
                 //time.Sleep(1 * time.Second)
                 select {
-                case ticks <- time.Now():
+                case fireCmdCh <- time.Now():
                     if done++; done == totalHits {
                         return
                     }
                 case <-missile.stopAttack:
                     return
                 default:
-                // all workers are blocked. start one more and try again
-                    launchers.Add(1)
-                    go missile.fire(target, &launchers, ticks, harms)
+                // all warhead are blocked. start one more and try again
+                    warheadsWaitGroup.Add(1)
+                    go missile.fire(target, &warheadsWaitGroup, fireCmdCh, damagesCh)
                 }
             }
         } else {
-            interval := 1e9 / attackPerSec
-            hits := attackPerSec * int(du.Seconds())
+            //Interval non-negative nanosecond
+            interval := 1e9 / hitPerSecond
+            hitsSum := hitPerSecond * int(du.Seconds())
             began, done := time.Now(), 0
             for {
                 now, next := time.Now(), began.Add(time.Duration(done * interval))
                 time.Sleep(next.Sub(now))
                 select {
-                case ticks <- max(next, now):
-                    if done++; done == hits {
+                case fireCmdCh <- max(next, now):
+                    if done++; done == hitsSum {
                         return
                     }
                 case <-missile.stopAttack:
                     return
                 default:
                 // all workers are blocked. start one more and try again
-                    launchers.Add(1)
-                    go missile.fire(target, &launchers, ticks, harms)
+                    warheadsWaitGroup.Add(1)
+                    go missile.fire(target, &warheadsWaitGroup, fireCmdCh, damagesCh)
                 }
             }
         }
     }()
-    return harms
+    return damagesCh
 }
 
 // Fire
-func (missile *Missile) fire(target *Target, launchers *sync.WaitGroup, ticks <-chan time.Time, results chan <-*Harm) {
-    defer launchers.Done()
-    for tk := range ticks {
+func (missile *Missile) fire(target *Target,
+warheadsWaitGroup *sync.WaitGroup, fireCmdCh <-chan time.Time, results chan <-*Damage) {
+
+    defer warheadsWaitGroup.Done()
+    for tk := range fireCmdCh {
         results <- missile.hit(target, tk)
     }
+
 }
 
 // Hit the Target
-func (missile *Missile) hit(target *Target, tkTime time.Time) *Harm {
+func (missile *Missile) hit(target *Target, tkTime time.Time) *Damage {
 
-    harm := &Harm{timestamp: tkTime}
+    damage := &Damage{timestamp: tkTime}
     req, err := target.request()
     if err != nil {
-        return &harm
+        return &damage
     }
 
-    harm.startTime = time.Now()
+    damage.startTime = time.Now()
     // Do http request
     resp, err := missile.client.Do(req)
 
     // Calculate the latency
-    harm.endTime = time.Now()
-    harm.latency = harm.endTime.Sub(harm.startTime)
+    damage.endTime = time.Now()
+    damage.latency = damage.endTime.Sub(damage.startTime)
 
     if err != nil {
-        return harm
+        return damage
     }
     defer resp.Body.Close()
 
     // Just discard the response body
     in, err := io.Copy(ioutil.Discard, resp.Body)
     if err != nil {
-        return harm
+        return damage
     }
     // Calculate the bytes received
-    harm.receivedBytes = uint64(in)
+    damage.receivedBytes = uint64(in)
 
     // Calculate the bytes sent
     if req.ContentLength != -1 {
-        harm.sentBytes = uint64(req.ContentLength)
+        damage.sentBytes = uint64(req.ContentLength)
     }
     // Calculate the err info
-    if harm.statusCode = resp.StatusCode; harm.statusCode < 200 || harm.statusCode >= 400 {
-        harm.error = resp.Status
+    if damage.statusCode = resp.StatusCode; damage.statusCode < 200 || damage.statusCode >= 400 {
+        damage.error = resp.Status
     }
-    return harm
+    return damage
 }
 
 // Stop stops the current attack.
