@@ -56,3 +56,4 @@ Usage of ./boom:
         The url to request
 
 ```
+#### Under development, there may be some bugs, welcome feedback :-)
