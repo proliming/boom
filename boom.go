@@ -1,39 +1,79 @@
 package main
 
 import (
+    "time"
     "log"
-    "regexp"
     "strings"
-    "net/http"
-    "bufio"
     "os"
+    "bufio"
     "os/signal"
 )
 
-// Use to check http methods
-var httpMethodChecker = regexp.MustCompile("^(HEAD|GET|PUT|POST|PATCH|OPTIONS|DELETE) ")
+// Options of boom
+type BoomOptions struct {
+    // -A: Supply BASIC Authentication credentials to the server.
+    // The username and password are separated by a single : .
+    Authentication             string
 
-const headerSplitChar = ";"
-const cookieSplitChar = headerSplitChar
-const bodyReadFilePrefix = "@@"
+    // -a: Local address
+    LocalAddr                  string
 
-// This method will create Target and Missile
-// then launch the Missile
-func boom(boomOpts *BoomOptions) {
+    // -C: Add a Cookie: line to the request like: cookie-name=value
+    RequestCookies             string
 
-    targetOpts := parseTargetOptions(boomOpts)
-    missileOpts := parseMissileOptions(boomOpts)
+    // -c: Content-type header to use for POST/PUT data,
+    // eg. application/x-www-form-urlencoded. Default is text/plain.
+    RequestPostDataContentType string
 
-    // now create target and missile
-    target := newTarget(targetOpts)
-    missile := newMissile(missileOpts)
+    // -D: File or just a string containing data to POST. Remember to also set -c.
+    RequestPostData            string
 
-    // launch
-    damagesResult := missile.launch(target, boomOpts.totalRequests, boomOpts.requestPerSec, boomOpts.requestDuration)
+    // -g: Number of threads(goroutines) to perform for the test.
+    RequestGoroutines          int
+
+    // -H: Append extra headers to the request like: head-type:value
+    RequestHeaders             string
+
+    // -k: Enable the HTTP KeepAlive feature
+    EnableKeepAlive            bool
+
+    // -m: Custom HTTP method for the requests.
+    RequestMethod              string
+
+    // -n: Number of requests to perform for the test. If this flag > 0, the -t and -r will be ignore.
+    TotalRequests              int
+
+    // -t: Duration of this test, Remember to set -r.
+    RequestDuration            time.Duration
+
+    // -u： The url to request
+    URL                        string
+    // -o: Output the reports in specified location
+    ResultOutput               string
+
+    // -r: Number of requests to perform at one sec.
+    RequestPerSec              int
+
+    // -s: Maximum number of seconds to wait before a request times out.
+    RequestTimeout             time.Duration
+}
+
+func Boom(opts *BoomOptions) {
+    err := checkOpts(opts)
+    if err != nil {
+        log.Fatal(err.Error())
+    }
+    target := createTarget(opts)
+    log.Println("Target ready.")
+
+    missile := createMissile(opts)
+    log.Println("Missile ready.")
+
+
+
+    damagesResult := missile.Launch(target, opts.TotalRequests, opts.RequestPerSec, opts.RequestDuration)
 
     log.Println("The missile launched!")
-
-    //receiveDamages(damagesResult)
 
     killFlag := make(chan os.Signal, 1)
     signal.Notify(killFlag, os.Interrupt)
@@ -41,60 +81,63 @@ func boom(boomOpts *BoomOptions) {
     for {
         select {
         case <-killFlag:
-            missile.stop()
-        log.Println("Press CTRL+C")
-            createReport(boomOpts)
+            missile.Stop()
+            log.Println("Press CTRL+C")
+            createReport(opts)
             return
         case r, ok := <-damagesResult:
             if !ok {
-                createReport(boomOpts)
+                createReport(opts)
                 return
             } else {
                 collectDamage(r)
             }
         }
     }
+
 }
 
-// Parse the TargetOptions
-func parseTargetOptions(boomOpts *BoomOptions) (targetOpts *TargetOptions) {
-    log.Println("Parsing target options...")
-    targetOpts = &TargetOptions{}
-    method := boomOpts.requestMethod
+func createMissile(opts *BoomOptions) *Missile {
 
-    if checkHttpMethod(method) {
-        targetOpts.method = method
+    cc := NewDefaultCtrlCenter()
+    if opts.RequestTimeout > 0 {
+        cc.Timeout = opts.RequestTimeout
     } else {
-        targetOpts.method = "GET"
+        cc.Timeout = defaultTimeout
     }
-    // TODO url check?
-    if len(boomOpts.requestUrl) > 0 {
-        targetOpts.url = boomOpts.requestUrl
+    if opts.RequestGoroutines > 0 {
+        cc.Warheads = opts.RequestGoroutines
     } else {
-        log.Fatal("Url not set for boom.")
+        cc.Warheads = defaultWarheads
     }
+    if opts.EnableKeepAlive {
+        cc.KeepAlive = 30 * time.Second
+    }
+    return NewCustomMissile(cc)
+}
 
-    httpHeader := http.Header{}
-    if boomOpts.requestHeaders != "" {
+func createTarget(opts *BoomOptions) *Target {
+    target := NewTarget(opts.URL)
+
+    target.SetMethod(opts.RequestMethod)
+
+    if opts.RequestHeaders != "" {
         // header
-        headerTokens := strings.Split(boomOpts.requestHeaders, headerSplitChar)
+        headerTokens := strings.Split(opts.RequestHeaders, ";")
         for _, sh := range headerTokens {
             headerValue := strings.Split(sh, ":")
             if len(headerValue) != 2 {
                 log.Fatalf("Not valid http header:%s", sh)
             }
-            httpHeader.Add(strings.TrimSpace(headerValue[0]), strings.TrimSpace(headerValue[1]))
+            target.AddHeader(strings.TrimSpace(headerValue[0]), strings.TrimSpace(headerValue[1]))
         }
-        targetOpts.header = httpHeader
     }
 
-    //TODO for now cookie not supported
-
     // post data
-    if boomOpts.requestPostData != "" {
-        body := boomOpts.requestPostData
-        if strings.HasPrefix(body, bodyReadFilePrefix) {
-            bodyContentFile := strings.TrimPrefix(body, bodyReadFilePrefix)
+    if opts.RequestPostData != "" {
+        body := opts.RequestPostData
+        if strings.HasPrefix(body, "@@") {
+            bodyContentFile := strings.TrimPrefix(body, "@@")
             f, err := os.Open(bodyContentFile)
             if err != nil {
                 log.Fatalf("Can't open file specified in :%s", bodyContentFile)
@@ -103,52 +146,31 @@ func parseTargetOptions(boomOpts *BoomOptions) (targetOpts *TargetOptions) {
             bodyBytes := []byte{}
             n, err := reader.Read(bodyBytes)
             if n > 0 && err == nil {
-                targetOpts.body = bodyBytes
+                target.Body = bodyBytes
             } else {
                 log.Fatalf("Read file to post error :%s", bodyContentFile)
             }
         } else {
-            targetOpts.body = []byte(strings.TrimSpace(body))
+            target.Body = []byte(strings.TrimSpace(body))
         }
-        if boomOpts.requestPostDataContentType == "" {
+        if opts.RequestPostDataContentType == "" {
             log.Println("Post data setted but no Content-Type. Will using text/plain")
-            httpHeader.Add("Content-Type", "text/plain")
+            target.AddHeader("Content-Type", "text/plain")
         } else {
-            httpHeader.Add("Content-Type", strings.TrimSpace(boomOpts.requestPostDataContentType))
+            target.AddHeader("Content-Type", strings.TrimSpace(opts.RequestPostDataContentType))
         }
     }
-
-    return targetOpts
-
+    return target
 }
 
-// Parse the MissileOptions
-func parseMissileOptions(boomOpts *BoomOptions) (missileOpts *MissileOptions) {
-    log.Println("Parsing missile options...")
-    missileOpts = &MissileOptions{}
-    if boomOpts.requestTimeout > 0 {
-        missileOpts.timeout = boomOpts.requestTimeout
-    } else {
-        missileOpts.timeout = defaultTimeout
+func checkOpts(opts *BoomOptions) error {
+    if opts == nil {
+        return errNilBoomOpts
     }
-    if boomOpts.requestGoroutines > 0 {
-        missileOpts.warheads = boomOpts.requestGoroutines
-    } else {
-        missileOpts.warheads = defaultWarheads
+    if opts.URL == "" {
+        return errBoomOpts
     }
-    // TODO support custom setting
-    missileOpts.maxIdleConnections = defaultConnections
-
-    missileOpts.keepAlive = missileOpts.keepAlive
-
-    log.Printf("Missile launchers:%d, timeout:%t, keepAlive:%b", missileOpts.warheads, missileOpts.timeout,
-        missileOpts.keepAlive)
-    // TODO support tlsConfig and http2Enable and maxRedirects
-    return missileOpts
-
+    // Some other check
+    return nil
 }
 
-// check
-func checkHttpMethod(m string) bool {
-    return httpMethodChecker.MatchString(m)
-}

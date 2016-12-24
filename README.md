@@ -2,9 +2,23 @@
 
 Boom is a HTTP load/stress testing tool.
 
-![](boom-logo.png)
+![](boom.png)
+
+
+
+### Main Concept
+#### Target
+A target is just a URL with some extra properties.
+#### Missile
+A missile is a wrapper of *http.Client* with custom settings.
+#### Warheads
+How many *goroutines* to setup during load/stress test.
+#### Damage
+The test result.
+
 
 ## Usage manual
+
 ```console
 Usage of ./boom:
   -A string
@@ -15,10 +29,6 @@ Usage of ./boom:
         File or just a string containing data to POST. Remember to also set -c.When using a file for input, remember add '@@' prefix to the file path. eg. @@/home/work/a.json
   -H string
         Append extra headers to the request like: head-type:value
-  -P string
-        Specify SSL/TLS protocol . (default "HTTP")
-  -R string
-        Generate reports in [text, json, plot]
   -V     Show version of boom then exit
   -c string
         Content-type header to use for POST/PUT data, eg. application/x-www-form-urlencoded. Default is text/plain.
@@ -44,4 +54,5 @@ Usage of ./boom:
         Duration of this test. (default 1s)
   -u string
         The url to request
+
 ```

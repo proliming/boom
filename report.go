@@ -72,15 +72,16 @@ func createReport(boomOpts *BoomOptions) (report *Report) {
     )
     for _, damage := range damagesBuffer {
         completedRequests++
-        if damage.error != "" {
+        if damage.Error != "" {
+            log.Println(damage.Error)
             failedRequests++
         }
-        totalSentBytes += damage.sentBytes
-        totalReceivedBytes += damage.receivedBytes
-        startTimestamps = append(startTimestamps, damage.timestamp)
-        latencies = append(latencies, damage.latency)
-        endTimeStamps = append(endTimeStamps, damage.endTime)
-        totalLatency += damage.latency.Seconds()
+        totalSentBytes += damage.SentBytes
+        totalReceivedBytes += damage.ReceivedBytes
+        startTimestamps = append(startTimestamps, damage.Timestamp)
+        latencies = append(latencies, damage.Latency)
+        endTimeStamps = append(endTimeStamps, damage.EndTime)
+        totalLatency += damage.Latency.Seconds()
     }
 
     sort.Sort(startTimestamps)
@@ -89,7 +90,7 @@ func createReport(boomOpts *BoomOptions) (report *Report) {
 
     report = &Report{}
 
-    report.ConcurrencyLevel = boomOpts.requestGoroutines
+    report.ConcurrencyLevel = boomOpts.RequestGoroutines
 
     // requests
     report.CompletedRequests = completedRequests
@@ -122,8 +123,8 @@ func createReport(boomOpts *BoomOptions) (report *Report) {
     report.MaxLatency = latencies[len(latencies) - 1].Seconds()
     report.MinLatency = latencies[0].Seconds()
 
-    if boomOpts.resultOutput != "Stdout" {
-        report.writeToFile(boomOpts.resultOutput)
+    if boomOpts.ResultOutput != "Stdout" {
+        report.writeToFile(boomOpts.ResultOutput)
     } else {
         report.prettyPrintToConsole()
     }
@@ -157,7 +158,6 @@ func (r *Report) prettyPrintToConsole() {
 func (r *Report) writeToFile(file string) {
 
 }
-
 
 // Forward request for length
 func (p ReportTimeSlice) Len() int {

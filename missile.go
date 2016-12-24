@@ -4,56 +4,74 @@ import (
     "net"
     "net/http"
     "time"
+    "crypto/tls"
     "sync"
     "io"
     "io/ioutil"
-    "crypto/tls"
-    "golang.org/x/net/http2"
     "log"
+)
+
+const (
+    defaultTimeout = 30 * time.Second
+    defaultMaxIdleConnections = 100
+    defaultWarheads = 100
+    noFollow = -1
 )
 // Missile is a wrapper of http.Client and some properties
 // A missile can carry many warheads means multi goroutines
 type Missile struct {
-    dialer     *net.Dialer
-    client     http.Client
-    stopAttack chan struct{}
-    warheads   int
-    redirects  int
+    ctrl   *CtrlCenter
+    dialer *net.Dialer
+    client http.Client
 }
 
-// Options of a Missile
-type MissileOptions struct {
-    timeout            time.Duration
-    warheads           int // How many warhead can this missile carry
-    maxIdleConnections int
-    keepAlive          bool
-    http2Enable        bool
-    maxRedirects       int
-    localAddr          *net.IPAddr
-    tlsConfig          *tls.Config
+type CtrlCenter struct {
+    Timeout            time.Duration
+    Warheads           int // How many warhead can this missile carry
+    MaxIdleConnections int
+    KeepAlive          time.Duration
+    Http2Enable        bool
+    MaxRedirects       int
+    LocalAddr          *net.IPAddr
+    TLSConfig          *tls.Config
+    Cancel             chan struct{}
 }
-
-const (
-    defaultTimeout = 30 * time.Second
-    defaultConnections = 10000
-    defaultWarheads = 100
-    noFollow = -1
-)
 
 var (
-    defaultLocalAddr = net.IPAddr{IP: net.IPv4zero}
+    defaultLocalAddr = &net.IPAddr{IP: net.IPv4zero}
     defaultTLSConfig = &tls.Config{InsecureSkipVerify: true}
 )
 
-// Create a missile with the given options
-func newMissile(missileOptions *MissileOptions) *Missile {
+// Create a default control center.
+func NewDefaultCtrlCenter() *CtrlCenter {
+    c := &CtrlCenter{}
+    c.Timeout = defaultTimeout
+    c.MaxIdleConnections = defaultMaxIdleConnections
+    c.Warheads = defaultWarheads
+    c.KeepAlive = 0
+    c.Http2Enable = false
+    c.LocalAddr = defaultLocalAddr
+    c.TLSConfig = defaultTLSConfig
+    c.Cancel = make(chan struct{})
+    return c;
+}
 
-    missile := &Missile{stopAttack: make(chan struct{}), warheads: defaultWarheads}
+// Create a missile with default options.
+func NewMissile() *Missile {
+    return NewCustomMissile(nil)
+}
 
+// Create a missile with custom options
+func NewCustomMissile(ct *CtrlCenter) *Missile {
+    missile := &Missile{}
+    if ct == nil {
+        ct = NewDefaultCtrlCenter()
+    }
+    missile.ctrl = ct
     missile.dialer = &net.Dialer{
-        LocalAddr: &net.TCPAddr{IP: defaultLocalAddr.IP, Zone: defaultLocalAddr.Zone},
-        KeepAlive: 30 * time.Second,
-        Timeout:   defaultTimeout,
+        LocalAddr:  &net.TCPAddr{IP: defaultLocalAddr.IP, Zone: defaultLocalAddr.Zone},
+        KeepAlive: ct.KeepAlive,
+        Timeout:   ct.Timeout,
     }
 
     missile.client = http.Client{
@@ -63,42 +81,21 @@ func newMissile(missileOptions *MissileOptions) *Missile {
             ResponseHeaderTimeout: defaultTimeout,
             TLSClientConfig:       defaultTLSConfig,
             TLSHandshakeTimeout:   10 * time.Second,
-            MaxIdleConnsPerHost:   defaultConnections,
+            MaxIdleConnsPerHost:   ct.MaxIdleConnections,
         },
-    }
-
-    if missileOptions != nil {
-        tr := missile.client.Transport.(*http.Transport)
-
-        missile.warheads = missileOptions.warheads;
-        missile.dialer.Timeout = missileOptions.timeout
-        tr.ResponseHeaderTimeout = missileOptions.timeout
-        tr.MaxIdleConnsPerHost = missileOptions.maxIdleConnections
-        if missileOptions.tlsConfig != nil {
-            tr.TLSClientConfig = missileOptions.tlsConfig
-        }
-        if !missileOptions.keepAlive {
-            tr.DisableKeepAlives = true
-            missile.dialer.KeepAlive = 0
-        }
-        if missileOptions.http2Enable {
-            http2.ConfigureTransport(tr)
-        } else {
-            tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
-        }
     }
     return missile
 }
 
-
 // Launch the Missile
-func (missile *Missile) launch(target *Target, totalHits int, hitPerSecond int, du time.Duration) <-chan *Damage {
+func (missile *Missile) Launch(target *Target, totalHits int, hitPerSecond int, du time.Duration) <-chan *Damage {
+
     var warheadsWaitGroup sync.WaitGroup
     damagesCh := make(chan *Damage)
     fireCmdCh := make(chan time.Time)
-
+    log.Println("Fireing...")
     // Each warhead standard for a single goroutine
-    for i := 0; i < missile.warheads; i++ {
+    for i := 0; i < missile.ctrl.Warheads; i++ {
         warheadsWaitGroup.Add(1)
         go missile.fire(target, &warheadsWaitGroup, fireCmdCh, damagesCh)
     }
@@ -116,7 +113,7 @@ func (missile *Missile) launch(target *Target, totalHits int, hitPerSecond int, 
                     if done++; done == totalHits {
                         return
                     }
-                case <-missile.stopAttack:
+                case <-missile.ctrl.Cancel:
                     return
                 default:
                 // all warhead are blocked. start one more and try again
@@ -137,7 +134,7 @@ func (missile *Missile) launch(target *Target, totalHits int, hitPerSecond int, 
                     if done++; done == hitsSum {
                         return
                     }
-                case <-missile.stopAttack:
+                case <-missile.ctrl.Cancel:
                     return
                 default:
                 // all workers are blocked. start one more and try again
@@ -150,9 +147,7 @@ func (missile *Missile) launch(target *Target, totalHits int, hitPerSecond int, 
     return damagesCh
 }
 
-// Fire
-func (missile *Missile) fire(target *Target,
-warheadsWaitGroup *sync.WaitGroup, fireCmdCh <-chan time.Time, results chan <-*Damage) {
+func (missile *Missile) fire(target *Target, warheadsWaitGroup *sync.WaitGroup, fireCmdCh <-chan time.Time, results chan <-*Damage) {
 
     defer warheadsWaitGroup.Done()
     for fc := range fireCmdCh {
@@ -164,22 +159,22 @@ warheadsWaitGroup *sync.WaitGroup, fireCmdCh <-chan time.Time, results chan <-*D
 // Hit the Target
 func (missile *Missile) hit(target *Target, fireCmdTime time.Time) *Damage {
 
-    damage := &Damage{timestamp: fireCmdTime}
-    req, err := target.request()
+    damage := &Damage{Timestamp: fireCmdTime}
+    req, err := target.Request()
     if err != nil {
         return damage
     }
 
-    damage.startTime = time.Now()
+    damage.StartTime = time.Now()
     // Do http request
     resp, err := missile.client.Do(req)
 
     // Calculate the latency
-    damage.endTime = time.Now()
-    damage.latency = damage.endTime.Sub(damage.startTime)
+    damage.EndTime = time.Now()
+    damage.Latency = damage.EndTime.Sub(damage.StartTime)
 
     if err != nil {
-        damage.error = err.Error()
+        damage.Error = err.Error()
         return damage
     }
     defer resp.Body.Close()
@@ -187,31 +182,31 @@ func (missile *Missile) hit(target *Target, fireCmdTime time.Time) *Damage {
     // Just discard the response body
     in, err := io.Copy(ioutil.Discard, resp.Body)
     if err != nil {
-        damage.error = err.Error()
+        damage.Error = err.Error()
         return damage
     }
     // Calculate the bytes received
-    damage.receivedBytes = uint64(in)
+    damage.ReceivedBytes = uint64(in)
 
     // Calculate the bytes sent
     if req.ContentLength != -1 {
-        damage.sentBytes = uint64(req.ContentLength)
+        damage.SentBytes = uint64(req.ContentLength)
     }
     // Calculate the err info
-    if damage.statusCode = resp.StatusCode; damage.statusCode != 200 {
-        damage.error = resp.Status
+    if damage.StatusCode = resp.StatusCode; damage.StatusCode != 200 {
+        damage.Error = resp.Status
     }
     return damage
 }
 
 // Stop stops the current attack.
-func (missile *Missile) stop() {
+func (missile *Missile) Stop() {
     log.Println("Missle will stop.")
     select {
-    case <-missile.stopAttack:
+    case <-missile.ctrl.Cancel:
         return
     default:
-        close(missile.stopAttack)
+        close(missile.ctrl.Cancel)
     }
 
 }
